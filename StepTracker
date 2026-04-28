@@ -1,0 +1,205 @@
+#include <LiquidCrystal.h>
+
+// LCD setup example: change pins to match your circuit
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Pin definitions
+const int ledPin = 13;
+const int buttonPin = 7;
+const int xPin = A0;
+const int yPin = A1;
+const int zPin = A2;
+
+// Calibration variables
+float xOffset = 0;
+float yOffset = 0;
+float zOffset = 0;
+const int numSamples = 100;
+const float GRAVITY_REFERENCE = 0;
+
+// Step tracking variables
+int stepCount = 0;
+unsigned long lastStepTime = 0;
+const int STEP_THRESHOLD = 50;
+const int STEP_DELAY = 300;
+bool stepDetected = false;
+
+// Walking pace variables
+unsigned long currentStepTime = 0;
+unsigned long previousStepTime = 0;
+unsigned long stepInterval = 0;
+String walkingPace = "Unknown";
+
+// Sensor test range
+const int minRange = 200;
+const int maxRange = 800;
+
+void setup() {
+  lcd.begin(16, 2);
+  pinMode(ledPin, OUTPUT);
+  pinMode(buttonPin, INPUT);
+
+  selfTest();
+  calibrateTracker();
+}
+
+void loop() {
+  stepTracker();
+  identifyWalkingPace();
+}
+
+void blinkLED() {
+  digitalWrite(ledPin, HIGH);
+  delay(100);
+  digitalWrite(ledPin, LOW);
+}
+
+bool buttonPressedWithinTime() {
+  unsigned long startTime = millis();
+
+  while (millis() - startTime < 3000) {
+    if (digitalRead(buttonPin) == HIGH) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void selfTest() {
+  lcd.clear();
+  lcd.print("Self-Test");
+
+  // Test LCD output
+  lcd.clear();
+  lcd.print("LCD Test");
+  delay(500);
+
+  // Test status LED
+  digitalWrite(ledPin, HIGH);
+  delay(300);
+  digitalWrite(ledPin, LOW);
+
+  // Test accelerometer connection and signal
+  int xValue = analogRead(xPin);
+  int yValue = analogRead(yPin);
+  int zValue = analogRead(zPin);
+
+  if (xValue >= minRange && xValue <= maxRange &&
+      yValue >= minRange && yValue <= maxRange &&
+      zValue >= minRange && zValue <= maxRange) {
+    lcd.clear();
+    lcd.print("Sensor OK");
+  } else {
+    lcd.clear();
+    lcd.print("Sensor Error");
+    return;
+  }
+
+  delay(500);
+
+  // Test pushbutton input
+  lcd.clear();
+  lcd.print("Press Button");
+
+  if (buttonPressedWithinTime()) {
+    lcd.clear();
+    lcd.print("Button OK");
+  } else {
+    lcd.clear();
+    lcd.print("Button Error");
+    return;
+  }
+
+  delay(500);
+
+  // Final result
+  lcd.clear();
+  lcd.print("Tracker Ready");
+  delay(1000);
+}
+
+void calibrateTracker() {
+  lcd.clear();
+  lcd.print("Calibrating...");
+  blinkLED();
+
+  float xSum = 0;
+  float ySum = 0;
+  float zSum = 0;
+
+  for (int i = 0; i < numSamples; i++) {
+    int xRaw = analogRead(xPin);
+    int yRaw = analogRead(yPin);
+    int zRaw = analogRead(zPin);
+
+    xSum += xRaw;
+    ySum += yRaw;
+    zSum += zRaw;
+
+    delay(10);
+  }
+
+  xOffset = xSum / numSamples;
+  yOffset = ySum / numSamples;
+  zOffset = zSum / numSamples;
+
+  zOffset = zOffset - GRAVITY_REFERENCE;
+
+  lcd.clear();
+  lcd.print("Cal Done");
+  delay(1000);
+
+  digitalWrite(ledPin, HIGH);
+}
+
+void stepTracker() {
+  static int previousSignal = 0;
+
+  int xValue = analogRead(xPin) - xOffset;
+  int yValue = analogRead(yPin) - yOffset;
+  int zValue = analogRead(zPin) - zOffset;
+
+  int motionSignal = abs(xValue) + abs(yValue) + abs(zValue);
+
+  stepDetected = false;
+
+  if (motionSignal > STEP_THRESHOLD && previousSignal <= STEP_THRESHOLD) {
+    unsigned long currentTime = millis();
+
+    if (currentTime - lastStepTime >= STEP_DELAY) {
+      stepCount++;
+      lastStepTime = currentTime;
+      stepDetected = true;
+
+      lcd.clear();
+      lcd.print("Steps: ");
+      lcd.print(stepCount);
+
+      blinkLED();
+    }
+  }
+
+  previousSignal = motionSignal;
+}
+
+void identifyWalkingPace() {
+  if (stepDetected == true) {
+    currentStepTime = millis();
+    stepInterval = currentStepTime - previousStepTime;
+    previousStepTime = currentStepTime;
+
+    if (stepInterval > 700) {
+      walkingPace = "Slow";
+    } else if (stepInterval > 400 && stepInterval <= 700) {
+      walkingPace = "Normal";
+    } else if (stepInterval <= 400) {
+      walkingPace = "Fast";
+    }
+
+    lcd.clear();
+    lcd.print("Pace: ");
+    lcd.print(walkingPace);
+    delay(500);
+  }
+}
